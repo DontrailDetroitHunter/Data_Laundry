@@ -1,0 +1,6 @@
+matplotlib
+streamlit
+pandas
+matplotlib
+fpdf
+openpyxl  # this handles Excel (.xlsx) support
