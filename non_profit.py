@@ -1,5 +1,6 @@
 import pandas as pd
 from fpdf import FPDF
+import difflib
 
 
 def clean_donations(df):
@@ -153,3 +154,26 @@ def create_pdf_report(donation_summary, volunteer_summary):
             pdf.multi_cell(0, 10, f"{key}: {value}")
 
     return pdf.output(dest="S").encode("latin1")
+
+
+def guess_columns(df):
+    expected_fields = {
+        "name": ["name", "full_name", "volunteer_name", "donor_name", "supporter"],
+        "hours": ["hours", "time", "duration", "volunteer_hours", "logged_hours"],
+        "amount": ["amount", "donation", "gift", "contribution", "value"],
+        "department": ["department", "program", "ministry", "campaign", "area"],
+        "date": ["date", "timestamp", "entry_date", "donation_date", "served_on"],
+    }
+
+    mapping = {}
+    for field, candidates in expected_fields.items():
+        matches = difflib.get_close_matches(field, df.columns, n=1, cutoff=0.6)
+        if matches:
+            mapping[field] = matches[0]
+        else:
+            # Try matching from candidate list
+            for candidate in candidates:
+                if candidate in df.columns:
+                    mapping[field] = candidate
+                    break
+    return mapping
