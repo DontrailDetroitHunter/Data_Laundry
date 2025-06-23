@@ -1,0 +1,7 @@
+donor_name,method,campaign,amount,date
+jane DOE,CREDIT,Holiday Fund,250,2024-12-10
+John SMITH,paypal,Back to School,125.5,2024-08-22
+amy jones,cash,,50,2024-07-15
+michael green,,Disaster Relief,$0,2024-07-03
+DONNA rayven,CREDIT,Holiday Fund,$100.00,not_a_date
+,credit,Health Drive,85.75,2024-06-01
