@@ -5,32 +5,64 @@ import difflib
 
 def clean_donations(df):
     df = df.copy()
+
+    # --- Normalize column names ---
     df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
 
     print("🧪 Columns after normalization:", df.columns.tolist())
 
-    # ✅ Safety check for required columns
-    required_columns = ["donor_name", "method", "campaign", "amount", "date"]
+    # --- Dynamic donor name aliasing ---
+    name_aliases = ["donor_name", "name", "full_name"]
+    for alias in name_aliases:
+        if alias in df.columns:
+            df = df.rename(columns={alias: "donor_name"})
+            break
+
+    # --- Use 'dept' as fallback for campaign if needed ---
+    if "campaign" not in df.columns and "dept" in df.columns:
+        df["campaign"] = df["dept"]
+
+    # --- Fill missing optional columns ---
+    if "campaign" not in df.columns:
+        df["campaign"] = "Uncategorized"
+    if "method" not in df.columns:
+        df["method"] = "unspecified"
+
+    # ✅ Require only essential columns now
+    required_columns = ["donor_name", "amount", "date"]
     missing = [col for col in required_columns if col not in df.columns]
     if missing:
         raise ValueError(f"Missing expected column(s): {missing}")
 
-    # Standardize text fields
+    # --- Standardize text fields ---
     df["donor_name"] = df["donor_name"].astype(str).str.strip().str.title()
     df["method"] = df["method"].astype(str).str.strip().str.lower()
     df["campaign"] = (
         df["campaign"].astype(str).str.strip().str.title().fillna("Uncategorized")
     )
 
-    # Fix currency symbols and convert amount to float
-    df["amount"] = df["amount"].replace(r"[\$,]", "", regex=True).astype(float)
+    # --- Clean and convert 'amount' ---
+    df["amount"] = (
+        df["amount"]
+        .astype(str)
+        .str.replace("$", "", regex=False)
+        .str.replace(",", "", regex=False)
+        .str.strip()
+    )
+    df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
 
-    # Parse and standardize dates
+    # --- Parse dates ---
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
 
-    # Drop rows with missing or zero donation amounts or donor names
+    # --- Drop invalid rows ---
+    initial_rows = len(df)
     df = df.dropna(subset=["donor_name", "amount", "date"])
     df = df[df["amount"] > 0]
+    dropped = initial_rows - len(df)
+    if dropped > 0:
+        print(
+            f"🧽 Dropped {dropped} row(s) due to missing or zero amounts, donor names, or invalid dates."
+        )
 
     return df
 
@@ -41,19 +73,43 @@ def clean_volunteers(df):
 
     print("🧪 Columns after normalization:", df.columns.tolist())
 
+    # --- Dynamic column alias mapping ---
+    col_map = {}
+
+    for col in df.columns:
+        col_clean = col.lower().strip()
+        if col_clean in ["name", "volunteer_name", "full_name"]:
+            col_map[col] = "name"
+        elif col_clean in ["dept", "department", "division"]:
+            col_map[col] = "dept"
+        elif col_clean in ["phone", "phone_number", "contact"]:
+            col_map[col] = "phone"
+        elif col_clean in ["hours", "volunteer_hours", "time"]:
+            col_map[col] = "hours"
+
+    df = df.rename(columns=col_map)
+
     # ✅ Check for required columns
     required_columns = ["name", "dept", "phone", "hours"]
     missing = [col for col in required_columns if col not in df.columns]
     if missing:
         raise ValueError(f"Missing expected column(s): {missing}")
 
-    # Standardize text fields
+    # --- Standardize fields ---
     df["name"] = df["name"].astype(str).str.strip().str.title()
     df["dept"] = df["dept"].astype(str).str.strip().str.title()
     df["phone"] = df["phone"].astype(str).str.replace(r"\D", "", regex=True)
+    df["hours"] = pd.to_numeric(df["hours"], errors="coerce")
 
-    # Drop rows missing key info
+    # ✅ Map department to campaign for charting
+    df["campaign"] = df["dept"].fillna("Unassigned").astype(str).str.strip().str.title()
+
+    # --- Drop rows missing key info ---
+    initial_rows = len(df)
     df = df.dropna(subset=["name", "hours"])
+    dropped = initial_rows - len(df)
+    if dropped > 0:
+        print(f"🧽 Dropped {dropped} row(s) due to missing volunteer names or hours.")
 
     return df
 
@@ -157,6 +213,8 @@ def create_pdf_report(donation_summary, volunteer_summary):
 
 
 def guess_columns(df):
+    if df is None:
+        return {}
     expected_fields = {
         "name": ["name", "full_name", "volunteer_name", "donor_name", "supporter"],
         "hours": ["hours", "time", "duration", "volunteer_hours", "logged_hours"],
@@ -177,3 +235,41 @@ def guess_columns(df):
                     mapping[field] = candidate
                     break
     return mapping
+
+
+def safe_clean_dataframe(df):
+    if df is None:
+        raise ValueError("No data to clean.")
+    df_clean = df.copy()
+
+    # Normalize column names
+    df_clean.columns = [
+        col.strip().lower().replace(" ", "_") for col in df_clean.columns
+    ]
+
+    # Attempt donation-type cleaning
+    if "amount" in df_clean.columns:
+        df_clean["amount"] = pd.to_numeric(df_clean["amount"], errors="coerce")
+
+    if "date" in df_clean.columns:
+        df_clean["date"] = pd.to_datetime(df_clean["date"], errors="coerce")
+
+    # Attempt volunteer-type cleaning
+    if "hours" in df_clean.columns:
+        df_clean["hours"] = pd.to_numeric(df_clean["hours"], errors="coerce")
+
+    # Attempt campaign alias mapping
+    if "dept" in df_clean.columns and "campaign" not in df_clean.columns:
+        df_clean["campaign"] = df_clean["dept"]
+
+    # Fill missing campaign labels to avoid chart errors
+    if "campaign" in df_clean.columns:
+        df_clean["campaign"] = (
+            df_clean["campaign"]
+            .astype(str)
+            .str.strip()
+            .str.title()
+            .fillna("Uncategorized")
+        )
+
+    return df_clean

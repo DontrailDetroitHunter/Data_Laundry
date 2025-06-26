@@ -1,8 +1,44 @@
 import streamlit as st
+
+
+st.set_page_config(page_title="Mission to Clean", page_icon="🧼")
+
+# --- Header and Mission ---
+st.title("🧼 Data Laundry for Nonprofits")
+st.markdown(
+    "Quickly clean, preview, and download structured donation or volunteer data — no tech skills required."
+)
+
+# --- Sample File CTA ---
+with st.expander("📂 No file? Try a sample dataset"):
+    st.markdown(
+        "[⬇ Download Sample CSV](https://docs.google.com/spreadsheets/d/1ReCIEaaa48e-ihJLMsrFFpRE8_UP-ALeYdPDgVVQQ_M/export?format=csv)"
+    )
+
+    st.markdown(
+        "[⬇ Download Sample Excel](https://docs.google.com/spreadsheets/d/1ReCIEaaa48e-ihJLMsrFFpRE8_UP-ALeYdPDgVVQQ_M/export?format=xlsx)"
+    )
+
+# --- Sidebar Info ---
+st.sidebar.title("🧭 About This Tool")
+st.sidebar.markdown(
+    "Built for nonprofits who work with messy spreadsheets. Upload donation or volunteer files — we'll detect, clean, and summarize them automatically."
+)
+
+# --- Pro Mode Control ---
+if st.sidebar.checkbox("🔓 Dev Override: Unlock Pro", key="dev_override"):
+    st.session_state["pro_user"] = True
+    st.sidebar.success("✨ Pro access unlocked!")
+
+is_pro_user = st.session_state.get("pro_user", False)
+PREVIEW_LIMIT = 10
+
+# --- Core App Variables ---
 import pandas as pd
 import matplotlib.pyplot as plt
 import io
 from fpdf import FPDF
+
 from non_profit import (
     clean_donations,
     clean_volunteers,
@@ -11,31 +47,218 @@ from non_profit import (
     generate_volunteer_summary,
     merge_donor_volunteer_data,
     create_pdf_report,
+    safe_clean_dataframe,
 )
 
-st.set_page_config(page_title="Data_Laundry: Mission to Clean")
+df_std = None
+is_donation = False
+is_volunteer = False
+is_fallback = not is_donation and not is_volunteer and df_std is not None
+
+
+col1, col2 = st.columns([1, 2])
+
+# with col1:
+#     if st.checkbox("👨‍💻 Dev Mode (Show Full Data)", key="dev_mode_main"):
+#         st.session_state["pro_user"] = True
+
+with col2:
+    if st.sidebar.checkbox("🔓 Dev Override: Unlock Pro", key="dev_mode_sidebar"):
+        st.session_state["pro_user"] = True
+        st.sidebar.success("✨ Pro access unlocked!")
+
+# Always check state AFTER dev toggles
+is_pro_user = st.session_state.get("pro_user", False)
+
+
+# --- Status Display ---
+status_col1, status_col2 = st.columns([1, 2])
+with status_col1:
+    st.write("🔐 Pro Mode:", is_pro_user)
+with status_col2:
+    if is_pro_user:
+        st.success("✅ Pro Access Enabled")
+    else:
+        st.warning("🔒 Free Mode: 10-Row Preview Only")
+
+# --- Upgrade Call-to-Action (shown only if not Pro) ---
+if not is_pro_user:
+    st.info(
+        "You're viewing the first 10 rows. Want full access? Request Pro access and I’ll unlock it for your org."
+    )
+    if st.button("🚀 Request Pro Access"):
+        st.markdown(
+            "[📬 Click here to request access via email](mailto:cleandatalaundry@gmail.com?subject=Pro%20Access%20Request)"
+        )
+
+
+def render_volunteer_view(cleaned_volunteers, is_pro_user, preview_limit=10):
+    if cleaned_volunteers.empty:
+        st.warning("⚠️ No valid volunteer data available for preview.")
+        return
+
+    st.subheader("🧼 Cleaned Volunteer Data Preview")
+    if is_pro_user:
+        st.dataframe(cleaned_volunteers)
+    else:
+        st.dataframe(cleaned_volunteers.head(preview_limit))
 
 
 def guess_columns(df):
     expected = {
-        "name": ["name", "volunteer", "full_name"],
-        "donor_name": ["donor", "supporter", "giver"],
-        "amount": ["amount", "donation", "gift", "contribution", "value"],
-        "hours": ["hours", "time", "duration", "logged"],
-        "department": ["department", "program", "campaign"],
-        "campaign": ["campaign", "initiative", "project"],
+        "id": [
+            "id",
+            "identifier",
+            "unique_id",
+            "case_number",
+            "client_id",
+            "volunteer_id",
+            "donor_id",
+            "supporter_id",
+            "client_identifier",
+        ],
+        "name": [
+            "name",
+            "person" "volunteer",
+            "full_name",
+            "identity",
+            "donor_name",
+            "supporter",
+            "id",
+            "unique_id",
+            "volunteer_name",
+            "volunteer_full_name",
+            "volunteer_identity",
+            "volunteer_person",
+            "volunteer_full_name",
+            "volunteer_identity",
+            "volunteer_person",
+        ],
+        "donor_name": [
+            "donor",
+            "supporter",
+            "giver",
+            "contributor",
+            "donation_name",
+        ],
+        "amount": [
+            "amount",
+            "donation",
+            "gift",
+            "contribution",
+            "value",
+            "price",
+            "donation_amount",
+            "donation_value",
+            "donation_total",
+            "totals",
+        ],
+        "hours": [
+            "hours",
+            "time",
+            "duration",
+            "logged",
+            "length",
+            "volunteer_hours",
+            "time_spent",
+            "volunteer_time",
+            "volunteer_duration",
+        ],
+        "department": [
+            "department",
+            "program",
+            "campaign",
+            "ministry",
+            "area",
+            "track",
+            "initiative",
+            "project",
+            "service_area",
+            "service_department",
+            "service_program",
+            "church",
+            "organization",
+            "nonprofit",
+            "nonprofit_name",
+            "organization_name",
+            "nonprofit_department",
+            "nonprofit_program",
+            "nonprofit_campaign",
+            "nonprofit_ministry",
+            "nonprofit_area",
+            "nonprofit_track",
+            "nonprofit_initiative",
+            "nonprofit_project",
+            "nonprofit_service_area",
+            "nonprofit_service_department",
+            "nonprofit_service_program",
+            "nonprofit_service_campaign",
+        ],
+        "campaign": [
+            "campaign",
+            "initiative",
+            "project",
+            "program",
+            "funding_program",
+            "funding_initiative",
+            "fundraiser",
+            "event",
+            "funding",
+            "funding_campaign",
+            "funding_initiative",
+            "funding_project",
+            "funding_event",
+            "funding_fundraiser",
+            "funding_source",
+            "category",
+            "subcategory",
+            "fund",
+            "funding_source",
+            "funding_source_name",
+            "funding_source_type",
+            "funding_source_category",
+            "funding_source_subcategory",
+            "funding_source_project",
+            "funding_source_initiative",
+            "funding_source_event",
+        ],
         "date": ["date", "timestamp", "donation_date", "served"],
         "client_id": ["id", "case_number", "client_identifier"],
         "service_type": ["program", "track", "service"],
         "contact": ["email", "phone", "contact_info"],
-        "gender": ["gender", "sex", "identity"],
+        "gender": [
+            "gender",
+            "sex",
+            "identity",
+            "gender_identity",
+            "prefix",
+            "pronouns",
+            "Mr",
+            "Mrs",
+            "Ms",
+            "Mx",
+            "Dr",
+            "male",
+            "female",
+            "non_binary",
+            "genderqueer",
+            "genderfluid",
+            "agender",
+            "bigender",
+            "two_spirit",
+        ],
         "ethnicity": ["race", "ethnicity", "background"],
         "notes": ["notes", "remarks", "comments"],
         "location": ["location", "address", "site"],
         "age": ["age", "years", "birth_year"],
         "status": ["status", "case_status", "volunteer_status"],
         "volunteer_status": ["volunteer_status", "engagement", "participation"],
-        "service_date": ["service_date", "visit_date", "appointment_date"],
+        "service_date": [
+            "service_date",
+            "visit_date",
+            "appointment_date",
+            "project_date",
+        ],
     }
     result = {}
     for key, aliases in expected.items():
@@ -80,224 +303,402 @@ with st.sidebar:
 st.title("🧺 Data_Laundry: Mission to Clean")
 
 
-uploaded = st.file_uploader("Upload your CSV or Excel file", type=["csv", "xlsx"])
+def run_column_mapper(df):
+    import streamlit as st
 
-if uploaded:
-    df = decode_file(uploaded)
-    if df is not None:
-        if df.columns.duplicated().any():
-            df = df.loc[:, ~df.columns.duplicated()]
-            st.warning("Duplicate columns found and removed.")
+    if df is None or df.empty:
+        return None
 
-        st.subheader("📋 Preview")
-        st.dataframe(df.head())
+    # Remove duplicate columns
+    if df.columns.duplicated().any():
+        df = df.loc[:, ~df.columns.duplicated()]
+        st.warning("⚠️ Duplicate columns removed.")
 
+    st.subheader("📈 Data Preview")
+    st.dataframe(df.head())
+
+    # Column guessing
+    try:
         column_map = guess_columns(df)
+    except Exception as e:
+        st.error(f"❌ Column guessing failed: {e}")
+        return None
 
-        def safe_index(col):
-            return df.columns.get_loc(col) if col in df.columns else 0
+    def safe_index(col):
+        return df.columns.get_loc(col) if col in df.columns else 0
 
-        st.sidebar.markdown("### 🧭 Match Your Columns")
-        column_map = guess_columns(df)
+    st.sidebar.markdown("### 🧭 Match Your Columns")
+    confirmed = {}
 
-        confirmed = {}
-        for key, guess in column_map.items():
-            confirmed[key] = st.sidebar.selectbox(
-                f"Column for `{key}`",
-                df.columns,
-                index=df.columns.get_loc(guess) if guess in df.columns else 0,
-            )
+    for key, guess in column_map.items():
+        confirmed[key] = st.sidebar.selectbox(
+            f"Column for `{key}`", df.columns, index=safe_index(guess), key=f"map_{key}"
+        )
 
+    if confirmed:
         df_std = df.rename(columns={v: k for k, v in confirmed.items()})
+        st.success("✅ Column mapping applied.")
+        st.subheader("🧼 Standardized Preview")
+        st.dataframe(df_std.head())
+        return df_std
+    else:
+        st.warning("⚠️ Mapping skipped — no columns were matched.")
+        return None
 
-        is_donation = "amount" in df_std.columns and "donor_name" in df_std.columns
-        is_volunteer = "hours" in df_std.columns and "name" in df_std.columns
 
-        cleaned_donations = None
-        cleaned_volunteers = None
-        donation_summary = None
-        volunteer_summary = None
+def detect_workflow(df_std):
+    donation_required = {"amount", "date"}
+    donation_optional = {"campaign", "donor_name", "method"}
+    donation_matches = donation_required.intersection(df_std.columns)
+    is_donation = len(donation_matches) == len(donation_required)
 
-        if is_donation:
-            st.header("💵 Donation Data")
+    volunteer_required = {"name", "hours", "department"}
+    volunteer_optional = {"contact", "phone", "email"}
+    volunteer_matches = volunteer_required.intersection(df_std.columns)
+    is_volunteer = len(volunteer_matches) == len(volunteer_required)
+
+    return is_donation, is_volunteer, donation_matches, volunteer_matches
+
+
+def missing_value_report(df, key_fields=None):
+    total = len(df)
+    missing_report = {}
+
+    for col in df.columns:
+        missing = df[col].isna().sum()
+        if missing > 0:
+            pct = (missing / total) * 100
+            critical = col in key_fields if key_fields else False
+            missing_report[col] = {
+                "missing_rows": missing,
+                "percent_missing": f"{pct:.1f}%",
+                "important": critical,
+            }
+
+    return missing_report
+
+
+# --- Upload & Safeguard ---
+# --- Upload & Safeguard ---
+# --- File Upload and Column Mapping ---
+uploaded_file = st.file_uploader("Upload your CSV or Excel file", type=["csv", "xlsx"])
+df = None
+df_std = None
+is_donation = False
+is_volunteer = False
+
+if uploaded_file:
+    try:
+        df = (
+            pd.read_csv(uploaded_file)
+            if uploaded_file.name.endswith(".csv")
+            else pd.read_excel(uploaded_file)
+        )
+    except Exception as e:
+        st.error(f"❌ Error reading file: {e}")
+    else:
+        df_std = run_column_mapper(df)
+        # --- Detect Workflow Type ---
+        is_donation, is_volunteer, donation_matches, volunteer_matches = (
+            detect_workflow(df_std)
+        )
+
+        # 🧪 Optional Debug Output
+        st.write("🧠 Matched donation fields:", donation_matches)
+        st.write("🧠 Matched volunteer fields:", volunteer_matches)
+        st.write("🔍 is_donation:", is_donation, " | is_volunteer:", is_volunteer)
+
+        # --- Donation Detection (Refined) ---
+        donation_required = {"amount", "date"}
+        donation_optional = {"campaign", "donor_name", "method"}
+        donation_matches = donation_required.intersection(df_std.columns)
+        is_donation = len(donation_matches) == len(donation_required)
+
+        # --- Volunteer Detection (Refined) ---
+        volunteer_required = {"name", "hours", "department"}
+        volunteer_optional = {"contact", "phone", "email"}
+        volunteer_matches = volunteer_required.intersection(df_std.columns)
+        is_volunteer = len(volunteer_matches) == len(volunteer_required)
+
+        # 🧪 Debug display (optional — remove in production)
+        st.write("🧠 Matched donation fields:", donation_matches)
+        st.write("🧠 Matched volunteer fields:", volunteer_matches)
+        st.write("🔍 is_donation:", is_donation, " | is_volunteer:", is_volunteer)
+
+else:
+    st.info("📂 Please upload a file to begin.")
+
+
+# --- Donation View ---
+if is_donation:
+    st.header("💵 Donation Data")
+
+    if (
+        st.radio("Step:", ["Preview Only", "Clean & Summarize"], key="donation_step")
+        == "Clean & Summarize"
+    ):
+        try:
+            cleaned_donations = clean_donations(df_std)
+
+            # Filter by selected date range
             if (
-                st.radio("Step:", ["Preview Only", "Clean & Summarize"], key="donate")
-                == "Clean & Summarize"
+                "date" in cleaned_donations.columns
+                and not cleaned_donations["date"].isna().all()
             ):
-                try:
-                    cleaned_donations = clean_donations(df_std)
-                    st.dataframe(cleaned_donations.head())
+                s, e = st.date_input(
+                    "Date Range",
+                    [cleaned_donations["date"].min(), cleaned_donations["date"].max()],
+                    min_value=cleaned_donations["date"].min(),
+                    max_value=cleaned_donations["date"].max(),
+                )
+                filtered = cleaned_donations[
+                    (cleaned_donations["date"] >= pd.to_datetime(s))
+                    & (cleaned_donations["date"] <= pd.to_datetime(e))
+                ]
+            else:
+                st.warning("⚠️ Missing or invalid date column — skipping filter.")
+                filtered = cleaned_donations
 
-                    # Filter by selected date range
-                    s, e = st.date_input(
-                        "Date Range",
-                        [
-                            cleaned_donations["date"].min(),
-                            cleaned_donations["date"].max(),
-                        ],
-                        min_value=cleaned_donations["date"].min(),
-                        max_value=cleaned_donations["date"].max(),
+            preview = filtered if is_pro_user else filtered.head(PREVIEW_LIMIT)
+            st.subheader("📋 Donation Preview")
+            st.dataframe(preview)
+
+            st.metric("💵 Total Donations", f"${filtered['amount'].sum():,.2f}")
+            st.metric("🙋 Donors", filtered["donor_name"].nunique())
+
+            if not is_pro_user:
+                st.info(f"You're viewing the first {PREVIEW_LIMIT} rows.")
+                if st.button("🚀 Request Pro Access (Donations)"):
+                    st.markdown(
+                        "[📬 Click to request Pro access](mailto:cleandatalaundry@gmail.com?subject=Pro%20Access%20Request)"
                     )
 
-                    # Apply date filtering
-                    filtered = cleaned_donations[
-                        (cleaned_donations["date"] >= pd.to_datetime(s))
-                        & (cleaned_donations["date"] <= pd.to_datetime(e))
-                    ]
+            st.subheader("📊 Donations by Campaign")
 
-                    # Pro user preview logic
-                    PREVIEW_LIMIT = 10
-                    is_pro_user = st.session_state.get("pro_user", False)
-                    filtered_preview = (
-                        filtered if is_pro_user else filtered.head(PREVIEW_LIMIT)
-                    )
+            # Fallback if campaign column is missing
+            if "campaign" not in filtered.columns and "dept" in filtered.columns:
+                filtered["campaign"] = filtered["dept"]
 
-                    st.subheader("📋 Cleaned Donation Preview")
-                    st.dataframe(filtered_preview)
-
-                    # Upgrade option
-                    if not is_pro_user:
-                        st.info(
-                            f"You're viewing the first {PREVIEW_LIMIT} rows. Upgrade to unlock full access and downloads."
-                        )
-                        if st.button("🚀 Upgrade to Pro"):
-                            st.session_state["pro_user"] = True
-                            st.success("✨ Pro unlocked! You now have full access.")
-
-                    st.metric("💵 Total", f"${filtered['amount'].sum():,.2f}")
-                    st.metric("🙋 Donors", filtered["donor_name"].nunique())
-
-                    if "campaign" in filtered.columns:
-                        ct = st.selectbox("Chart", ["Bar", "Line", "Pie"])
-                        fig, ax = plt.subplots()
-                        cd = filtered.groupby("campaign")["amount"].sum().sort_values()
-
-                    if ct == "Bar":
-                        cd.plot(kind="barh", ax=ax, color="#4d4dff")
-                    elif ct == "Line":
-                        cd.plot(kind="line", ax=ax, marker="o", color="#4d4dff")
-                    elif ct == "Pie":
-                        cd.plot(kind="pie", ax=ax, autopct="%.1f%%", startangle=90)
-                        ax.set_ylabel("")
-
-                    ax.set_title("Donations by Campaign")
-                    st.pyplot(fig)
-
-                    st.download_button(
-                        "⬇ Download",
-                        filtered.to_csv(index=False),
-                        file_name="filtered_donations.csv",
-                    )
-
-                    donation_summary = generate_donation_summary(filtered)
-                    hygiene = generate_hygiene_report(df_std, filtered, "Donations")
-                    st.subheader("🧽 Hygiene Report")
-                    st.json(hygiene)
-                    st.subheader("📦 Summary")
-                    st.json(donation_summary)
-
-                except Exception as e:
-                    st.error(f"❌ Donations failed: {e}")
-
-        if is_volunteer:
-            st.header("🙋 Volunteer Data")
             if (
-                st.radio("Step:", ["Preview Only", "Clean & Summarize"], key="vol")
-                == "Clean & Summarize"
+                "campaign" in filtered.columns
+                and "amount" in filtered.columns
+                and filtered["amount"].notna().sum() > 0
             ):
-                try:
-                    cleaned_volunteers = clean_volunteers(df_std)
-                    st.dataframe(cleaned_volunteers.head())
+                chart_type = st.selectbox(
+                    "Chart Type", ["Bar", "Line", "Pie"], key="donation_chart"
+                )
+                chart_data = filtered.groupby("campaign")["amount"].sum().sort_values()
+                fig, ax = plt.subplots()
 
-                    depts = ["All"] + sorted(
-                        cleaned_volunteers["department"].dropna().unique()
-                    )
-                    selected = st.selectbox("Department", depts)
-                    filtered = (
-                        cleaned_volunteers
-                        if selected == "All"
-                        else cleaned_volunteers[
-                            cleaned_volunteers["department"] == selected
-                        ]
-                    )
+                if chart_type == "Bar":
+                    chart_data.plot(kind="barh", ax=ax, color="#4d4dff")
+                elif chart_type == "Line":
+                    chart_data.plot(kind="line", ax=ax, marker="o", color="#4d4dff")
+                elif chart_type == "Pie":
+                    chart_data.plot(kind="pie", ax=ax, autopct="%.1f%%", startangle=90)
+                    ax.set_ylabel("")
 
-                    st.metric("🙋 Volunteers", filtered["name"].nunique())
-                    st.metric("⏱️ Total Hours", filtered["hours"].sum())
+                ax.set_title("Donations by Campaign")
+                st.pyplot(fig)
+            else:
+                st.info(
+                    "📉 Chart skipped — missing or empty 'amount' or 'campaign' data."
+                )
 
-                    chart_type = st.selectbox("Chart", ["Bar", "Line", "Pie"])
-                    chart = filtered.groupby("department")["hours"].sum().sort_values()
-                    fig, ax = plt.subplots()
-
-                    if chart_type == "Bar":
-                        chart.plot(kind="barh", ax=ax, color="#82d18e")
-                    elif chart_type == "Line":
-                        chart.plot(kind="line", ax=ax, marker="o", color="#82d18e")
-                    elif chart_type == "Pie":
-                        chart.plot(
-                            kind="pie",
-                            ax=ax,
-                            autopct="%1.1f%%",
-                            startangle=90,
-                            colors=plt.cm.Pastel1.colors,
-                        )
-                        ax.set_ylabel("")  # hide y-label for pie
-
-                    ax.set_title("Volunteer Hours by Department")
-                    st.pyplot(fig)
-
-                    if chart_type == "Pie":
-                        ax.set_ylabel("")
-                    ax.set_title("Hours by Department")
-                    st.pyplot(fig)
-
-                    st.download_button(
-                        "⬇ Download",
-                        filtered.to_csv(index=False),
-                        file_name="filtered_volunteers.csv",
-                    )
-
-                    volunteer_summary = generate_volunteer_summary(filtered)
-                    hygiene = generate_hygiene_report(df_std, filtered, "Volunteers")
-                    st.subheader("🧽 Hygiene Report")
-                    st.json(hygiene)
-                    st.subheader("📦 Summary")
-                    st.json(volunteer_summary)
-
-                except Exception as e:
-                    st.error(f"❌ Volunteers failed: {e}")
-
-        if cleaned_donations is not None and cleaned_volunteers is not None:
-            st.header("🔁 Merged Donor & Volunteer View")
-            merged = merge_donor_volunteer_data(cleaned_donations, cleaned_volunteers)
-            st.dataframe(merged.head())
-
-            st.download_button(
-                "⬇ Download Merged",
-                merged.to_csv(index=False),
-                file_name="merged_donor_volunteer.csv",
-            )
+            st.subheader("⬇️ Download Cleaned Donations")
+            if is_pro_user:
+                st.download_button(
+                    label="⬇ Download Full Cleaned File",
+                    data=filtered.to_csv(index=False),
+                    file_name="cleaned_donations.csv",
+                    mime="text/csv",
+                    key="download_donations_full",
+                )
+            else:
+                st.download_button(
+                    label="⬇ Download Sample (Pro Only)",
+                    data=filtered.head(PREVIEW_LIMIT).to_csv(index=False),
+                    file_name="donations_sample.csv",
+                    mime="text/csv",
+                    disabled=True,
+                    help="Unlock Pro to download full dataset",
+                )
 
             try:
-                pdf = create_pdf_report(donation_summary, volunteer_summary)
-                st.download_button(
-                    "📥 Download PDF",
-                    data=pdf,
-                    file_name="nonprofit_summary.pdf",
-                    mime="application/pdf",
-                )
+                donation_summary = generate_donation_summary(cleaned_donations)
+                st.subheader("📦 Donation Summary")
+                st.json(donation_summary)
             except Exception as e:
-                st.error(f"PDF generation failed: {e}")
-                PREVIEW_LIMIT = 10
-    is_pro_user = st.session_state.get("pro_user", False)
+                st.error(f"❌ Donation summary failed: {e}")
 
+        except Exception as e:
+            st.error(f"❌ Donations failed: {e}")
+
+
+if is_volunteer:
+    st.header("🙋 Volunteer Data")
+
+    if (
+        st.radio("Step:", ["Preview Only", "Clean & Summarize"], key="volunteer_step")
+        == "Clean & Summarize"
+    ):
+        try:
+            cleaned_volunteers = clean_volunteers(df_std)
+            st.subheader("📋 Cleaned Volunteer Preview")
+            st.dataframe(cleaned_volunteers.head())
+
+            # 🧼 Fallback: If 'campaign' is missing but 'dept' exists
+            if (
+                "campaign" not in cleaned_volunteers.columns
+                and "dept" in cleaned_volunteers.columns
+            ):
+                cleaned_volunteers["campaign"] = cleaned_volunteers["dept"]
+
+            # 🧪 Build campaign filter dynamically
+            if "campaign" in cleaned_volunteers.columns:
+                campaigns = ["All"] + sorted(
+                    cleaned_volunteers["campaign"].dropna().unique()
+                )
+                selected = st.selectbox("Campaign", campaigns, key="vol_dept")
+
+                filtered = (
+                    cleaned_volunteers
+                    if selected == "All"
+                    else cleaned_volunteers[cleaned_volunteers["campaign"] == selected]
+                )
+            else:
+                filtered = cleaned_volunteers
+                st.warning("⚠️ No 'campaign' column found — skipping campaign filter.")
+
+            preview = filtered if is_pro_user else filtered.head(PREVIEW_LIMIT)
+            st.subheader("📋 Volunteer Preview")
+            st.dataframe(preview)
+
+            st.metric("🙋 Volunteers", filtered["name"].nunique())
+            st.metric("⏱️ Total Hours", filtered["hours"].sum())
+
+            if not is_pro_user:
+                st.info(f"You're viewing the first {PREVIEW_LIMIT} rows.")
+                if st.button("🚀 Request Pro Access (Volunteers)"):
+                    st.markdown(
+                        "[📬 Click to request access](mailto:cleandatalaundry@gmail.com?subject=Pro%20Access%20Request)"
+                    )
+
+            st.subheader("📊 Volunteer Hours by Campaign")
+
+            if (
+                "campaign" in filtered.columns
+                and "hours" in filtered.columns
+                and filtered["hours"].notna().sum() > 0
+            ):
+                chart = filtered.groupby("campaign")["hours"].sum().sort_values()
+                chart_type = st.selectbox(
+                    "Chart Type", ["Bar", "Line", "Pie"], key="vol_chart"
+                )
+                fig, ax = plt.subplots()
+
+                if chart_type == "Bar":
+                    chart.plot(kind="barh", ax=ax, color="#82d18e")
+                elif chart_type == "Line":
+                    chart.plot(kind="line", ax=ax, marker="o", color="#82d18e")
+                elif chart_type == "Pie":
+                    chart.plot(
+                        kind="pie",
+                        ax=ax,
+                        autopct="%1.1f%%",
+                        startangle=90,
+                        colors=plt.cm.Pastel1.colors,
+                    )
+                    ax.set_ylabel("")
+
+                ax.set_title("Volunteer Hours by Campaign")
+                st.pyplot(fig)
+            else:
+                st.info(
+                    "📉 Chart skipped — missing or empty 'hours' or 'campaign' data."
+                )
+
+            st.subheader("⬇️ Download Cleaned Volunteers")
+            if is_pro_user:
+                st.download_button(
+                    "⬇ Download Full Cleaned File",
+                    filtered.to_csv(index=False),
+                    file_name="cleaned_volunteers.csv",
+                    mime="text/csv",
+                    key="download_volunteers_full",
+                )
+            else:
+                st.download_button(
+                    "⬇ Download Sample (Pro Only)",
+                    filtered.head(PREVIEW_LIMIT).to_csv(index=False),
+                    file_name="volunteers_sample.csv",
+                    mime="text/csv",
+                    disabled=True,
+                    help="Unlock Pro to download the full dataset",
+                )
+
+            try:
+                volunteer_summary = generate_volunteer_summary(filtered)
+                hygiene = generate_hygiene_report(df_std, filtered, "Volunteers")
+
+                st.subheader("🧽 Hygiene Report")
+                st.json(hygiene)
+
+                st.subheader("📦 Volunteer Summary")
+                st.json(volunteer_summary)
+
+            except Exception as e:
+                st.error(f"❌ Volunteer summary or hygiene failed: {e}")
+
+        except Exception as e:
+            st.error(f"❌ Volunteers failed: {e}")
+
+
+# if not is_donation and not is_volunteer:
+#     st.warning(
+#         "⚠️ Your file didn't match donation or volunteer templates exactly, but we've cleaned and preserved what we could."
+#     )
+if df_std is not None and not is_donation and not is_volunteer:
+    st.warning(
+        "⚠️ Your file didn't match donation or volunteer templates exactly, but we've cleaned and preserved what we could."
+    )
+
+    try:
+        fallback = safe_clean_dataframe(df_std)
+
+        if fallback.empty:
+            st.warning("⚠️ Fallback cleaning returned no usable data.")
+        else:
+            st.subheader("🧼 Fallback Cleaned Preview")
+            st.dataframe(fallback.head(PREVIEW_LIMIT))
+
+            st.subheader("🧼 Missing Value Overview")
+            hygiene = missing_value_report(
+                fallback, key_fields=["name", "hours", "amount", "date"]
+            )
+            st.json(hygiene)
+
+            st.download_button(
+                "⬇ Download Cleaned Fallback File",
+                fallback.to_csv(index=False),
+                file_name="cleaned_fallback.csv",
+                mime="text/csv",
+                key="fallback_download",
+            )
+
+    except Exception as e:
+        st.error(f"❌ Fallback cleaning failed: {e}")
+
+
+# --- Combined View ---
 
 st.markdown("---")
 st.markdown("### What Makes Data_Laundry Different")
 st.markdown(
-    "- ✅ Works with any column names\n"
-    "- 🚀 No templates or rigid formats\n"
+    "- ✅ Adapts to column names—no rigid templates required\n"
+    "- 🚀 Flexible column matching, even with messy files\n"
     "- 📊 Built for nonprofits, not spreadsheets\n"
-    "- 🧠 Smart insights, not just row cleanup"
+    "- 🧠 Smart insights, not just row cleanup, Smart mapping for real-world nonprofit data"
 )
 st.caption("Built by **Dontrail Detroit Hunter** · Powered by Data_Laundry 🧼")
 st.markdown("### 🧼 Data_Laundry: Mission to Clean")
