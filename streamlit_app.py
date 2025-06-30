@@ -47,7 +47,11 @@ from non_profit import (
     generate_volunteer_summary,
     merge_donor_volunteer_data,
     create_pdf_report,
+    push_to_salesforce,
     safe_clean_dataframe,
+    push_to_salesforce,
+    safe_clean_dataframe,
+    clean_data,
 )
 
 df_std = None
@@ -80,6 +84,31 @@ with status_col2:
         st.success("✅ Pro Access Enabled")
     else:
         st.warning("🔒 Free Mode: 10-Row Preview Only")
+# --- CRM Integration Options ---
+st.sidebar.markdown("## 🔗 CRM Integration (Optional)")
+
+enable_crm = st.sidebar.checkbox("Enable Salesforce Sync", value=False)
+
+if enable_crm:
+    st.sidebar.success("📡 CRM Sync Enabled")
+    selected_object = st.sidebar.selectbox(
+        "Salesforce Object",
+        ["Opportunity", "Volunteer__c", "Donation__c", "Custom_Object__c"],
+        index=0,
+        key="crm_object",
+    )
+    st.sidebar.markdown(
+        "ℹ️ Add your access token in non_profit.py or connect via OAuth."
+    )
+    salesforce_token = st.sidebar.text_input(
+        "🔐 Enter Salesforce Access Token (Dev Only)",
+        type="password",
+        placeholder="Paste your token here",
+        key="salesforce_token_input",
+    )
+
+    if salesforce_token:
+        st.session_state["sf_token"] = salesforce_token
 
 # --- Upgrade Call-to-Action (shown only if not Pro) ---
 if not is_pro_user:
@@ -88,7 +117,7 @@ if not is_pro_user:
     )
     if st.button("🚀 Request Pro Access"):
         st.markdown(
-            "[📬 Click here to request access via email](mailto:cleandatalaundry@gmail.com?subject=Pro%20Access%20Request)"
+            "[📬 Click here to request access via email](mailto:https://docs.google.com/spreadsheets/d/1gPTMI02oOQBERrMEf4kea9qQqtnr73CEFRZYDr3hwA8/edit?resourcekey=&gid=251280724#gid=251280724)"
         )
 
 
@@ -300,6 +329,11 @@ with st.sidebar:
     st.sidebar.markdown("## 💌 Need custom cleanup help?")
     st.sidebar.markdown("📬 Email:")
     st.caption("🔧 cleandatalaundry@gmail.com")
+    st.sidebar.markdown(
+        "📋 [Fill out this quick form to request Pro access](https://.../viewform)"
+    )
+
+
 st.title("🧺 Data_Laundry: Mission to Clean")
 
 
@@ -384,6 +418,7 @@ def missing_value_report(df, key_fields=None):
 uploaded_file = st.file_uploader("Upload your CSV or Excel file", type=["csv", "xlsx"])
 df = None
 df_std = None
+cleaned_df = None
 is_donation = False
 is_volunteer = False
 
@@ -398,6 +433,15 @@ if uploaded_file:
         st.error(f"❌ Error reading file: {e}")
     else:
         df_std = run_column_mapper(df)
+
+        # ✅ Auto-clean after mapping
+        cleaned_df = clean_data(df_std)
+        st.success("✅ File uploaded and auto-cleaned.")
+        st.dataframe(cleaned_df.head())
+
+        # ✅ Use the cleaned output throughout the app
+        filtered = cleaned_df
+
         # --- Detect Workflow Type ---
         is_donation, is_volunteer, donation_matches, volunteer_matches = (
             detect_workflow(df_std)
@@ -507,6 +551,7 @@ if is_donation:
 
             st.subheader("⬇️ Download Cleaned Donations")
             if is_pro_user:
+
                 st.download_button(
                     label="⬇ Download Full Cleaned File",
                     data=filtered.to_csv(index=False),
@@ -514,7 +559,15 @@ if is_donation:
                     mime="text/csv",
                     key="download_donations_full",
                 )
-            else:
+            if is_pro_user and st.button("🔗 Push to Salesforce (Donations)"):
+                success, message = push_to_salesforce(
+                    filtered, object_type="Opportunity"
+                )
+                if success:
+                    st.success(f"✅ {message}")
+                else:
+                    st.error(f"❌ {message}")
+
                 st.download_button(
                     label="⬇ Download Sample (Pro Only)",
                     data=filtered.head(PREVIEW_LIMIT).to_csv(index=False),
@@ -617,11 +670,34 @@ if is_volunteer:
                 st.info(
                     "📉 Chart skipped — missing or empty 'hours' or 'campaign' data."
                 )
+            if is_pro_user and enable_crm:
+                st.caption(f"🎯 Target CRM Object: `{selected_object}`")
+
+                if st.button("🔄 Push to Salesforce (Volunteers)"):
+                    success, message, sync_log = push_to_salesforce(
+                        filtered, object_type=selected_object
+                    )
+
+                    if success:
+                        st.success(f"✅ {message}")
+                    else:
+                        st.error(f"❌ {message}")
+
+                    if sync_log and isinstance(sync_log, list) and len(sync_log) > 0:
+                        log_df = pd.DataFrame(sync_log)
+                        with st.expander("📋 View Sync Log"):
+                            st.caption(f"📋 Sync Log: {len(log_df)} rows processed")
+                            st.dataframe(log_df)
+                            st.download_button(
+                                "📄 Download Sync Log",
+                                log_df.to_csv(index=False),
+                                file_name="sync_log.csv",
+                            )
 
             st.subheader("⬇️ Download Cleaned Volunteers")
             if is_pro_user:
                 st.download_button(
-                    "⬇ Download Full Cleaned File",
+                    "📁 Download Full Cleaned File",
                     filtered.to_csv(index=False),
                     file_name="cleaned_volunteers.csv",
                     mime="text/csv",
@@ -629,12 +705,47 @@ if is_volunteer:
                 )
             else:
                 st.download_button(
-                    "⬇ Download Sample (Pro Only)",
-                    filtered.head(PREVIEW_LIMIT).to_csv(index=False),
+                    "📁 Download Sample (Pro Only)",
+                    filtered.head(10).to_csv(index=False),
                     file_name="volunteers_sample.csv",
                     mime="text/csv",
                     disabled=True,
-                    help="Unlock Pro to download the full dataset",
+                    help="Unlock Pro to download the full file and sync to Salesforce",
+                )
+
+            if st.button("🔄 Push to Salesforce (Volunteers)"):
+                success, message, sync_log = push_to_salesforce(
+                    filtered, object_type=selected_object
+                )
+
+                if success:
+                    st.success(f"✅ {message}")
+                else:
+                    st.error(f"❌ {message}")
+
+                # 👇 Drop your improved sync_log check right here
+                if sync_log and isinstance(sync_log, list) and len(sync_log) > 0:
+                    log_df = pd.DataFrame(sync_log)
+                    st.caption(f"📋 Sync Log: {len(log_df)} rows processed")
+                    st.dataframe(log_df)
+                    st.download_button(
+                        "📄 Download Sync Log",
+                        log_df.to_csv(index=False),
+                        file_name="sync_log.csv",
+                    )
+
+                    if success:
+                        st.success(f"✅ {message}")
+                    else:
+                        st.error(f"❌ {message}")
+            else:
+                st.download_button(
+                    "📁 Download Sample (Pro Only)",
+                    filtered.head(10).to_csv(index=False),
+                    file_name="volunteers_sample.csv",
+                    mime="text/csv",
+                    disabled=True,
+                    help="Unlock Pro to download the full file and sync to Salesforce",
                 )
 
             try:

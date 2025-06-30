@@ -1,3 +1,4 @@
+import streamlit as st
 import pandas as pd
 from fpdf import FPDF
 import difflib
@@ -273,3 +274,89 @@ def safe_clean_dataframe(df):
         )
 
     return df_clean
+
+
+# --- Salesforce Push (Beta Stub) ---
+def push_to_salesforce(df, object_type="Opportunity"):
+    import requests
+    import json
+    import streamlit as st
+    from datetime import datetime
+    import pandas as pd  # If you plan to return/display/export the log
+
+    token = st.session_state.get("sf_token")
+    if not token:
+        return (
+            False,
+            "No Salesforce token provided. Please enter one in the sidebar.",
+            [],
+        )
+
+    instance_url = "https://your_instance.salesforce.com"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        synced = 0
+        errors = []
+        log = []
+
+        for _, row in df.iterrows():
+            payload = {
+                "Name": row.get("name"),
+                "Amount__c": row.get("amount"),
+                "Campaign__c": row.get("campaign"),
+                "Hours__c": row.get("hours"),
+                "Email__c": row.get("contact"),
+            }
+
+            response = requests.post(
+                f"{instance_url}/services/data/v52.0/sobjects/{object_type}/",
+                headers=headers,
+                data=json.dumps(payload),
+            )
+
+            timestamp = datetime.now().isoformat()
+
+            if response.ok:
+                synced += 1
+                log.append(
+                    {
+                        "name": row.get("name", "Unknown"),
+                        "status": "Synced",
+                        "message": "Success",
+                        "timestamp": timestamp,
+                    }
+                )
+            else:
+                errors.append(row.get("name", "Unknown"))
+                log.append(
+                    {
+                        "name": row.get("name", "Unknown"),
+                        "status": "Failed",
+                        "message": response.text,
+                        "timestamp": timestamp,
+                    }
+                )
+
+        summary = f"✅ Pushed {synced} rows. 🚧 {len(errors)} errors."
+        return True, summary, log
+
+    except Exception as e:
+        return False, f"Sync error: {e}", []
+
+
+def run_column_mapper(df):
+    return df.copy()  # Placeholder for any mapping logic you'd like
+
+
+def clean_data(df):
+    df_std = run_column_mapper(df)
+    if "amount" in df_std.columns and "date" in df_std.columns:
+        return clean_donations(df_std)
+    elif "hours" in df_std.columns and "name" in df_std.columns:
+        return clean_volunteers(df_std)
+    else:
+        return safe_clean_dataframe(df_std)
