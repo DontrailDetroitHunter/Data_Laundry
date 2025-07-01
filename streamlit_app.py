@@ -328,7 +328,7 @@ with st.sidebar:
     )
     st.sidebar.markdown("## 💌 Need custom cleanup help?")
     st.sidebar.markdown("📬 Email:")
-    st.caption("🔧 cleandatalaundry@gmail.com")
+    st.caption("🔧 cleandataaundry@gmail.com")
     st.sidebar.markdown(
         "📋 [Fill out this quick form to request Pro access](https://.../viewform)"
     )
