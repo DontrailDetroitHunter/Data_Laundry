@@ -330,7 +330,7 @@ with st.sidebar:
     st.sidebar.markdown("📬 Email:")
     st.caption("🔧 cleandataaundry@gmail.com")
     st.sidebar.markdown(
-        "📋 [Fill out this quick form to request Pro access](https://.../viewform)"
+        "📋 [Fill out this quick form to request Pro access](https://forms.gle/vJ55VwzP9DudWNCG8)"
     )
 
 
