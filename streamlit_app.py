@@ -352,16 +352,22 @@ with st.sidebar:
         "Use R? Download our R Markdown template to generate a clean HTML report from your cleaned CSV."
     )
 
-with st.sidebar.expander("📄 R Markdown Report (Optional)"):
+with st.sidebar.expander("📄 R Markdown & Sample Output"):
     st.markdown(
-        "Use **RStudio**? Download our `.Rmd` template to turn your cleaned CSV into a styled HTML report."
+        "Use **RStudio** to turn your cleaned CSV into a styled HTML report. Great for grant writers, CRM assistants, or nonprofit analysts."
     )
     st.markdown(
         "[📄 Download Template](https://github.com/DontrailDetroitHunter/Data_Laundry/raw/main/rmd_reports/data_laundry_report.Rmd)"
     )
-    st.markdown("Steps: 1) Open in RStudio  2) Change the file path  3) Click **Knit**")
-    st.markdown(
-        "Great for grant writers, CRM assistants, or analysts already working in R."
+    st.markdown("Steps:")
+    st.markdown("1. Open the `.Rmd` file in RStudio")
+    st.markdown("2. Change this line to match your CSV name:")
+    st.code('data <- read_csv("cleaned_data.csv")', language="r")
+    st.markdown("3. Click **Knit** for a report you can print or share.")
+    st.image(
+        "assets/rmd_preview.png",
+        caption="Sample knit report in HTML",
+        use_container_width=True,
     )
 
 
