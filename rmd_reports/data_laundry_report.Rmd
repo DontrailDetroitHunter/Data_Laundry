@@ -1,0 +1,23 @@
+---
+title: "🧺 Data Laundry Report"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    theme: flatly
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+# Replace with your actual file name if different
+data <- read_csv("cleaned_data.csv")
+
+glimpse(data)
+
+colSums(is.na(data))
+
+summary(data)
+
+head(data, 10)
+

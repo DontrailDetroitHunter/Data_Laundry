@@ -316,8 +316,11 @@ def decode_file(uploaded_file):
 with st.sidebar:
     st.markdown("## 🧼 File Types")
     st.markdown("- CSV (.csv)\n- Excel (.xlsx)")
-    st.markdown("## 🧪 Coming Soon")
-    st.markdown("- PDF/Scanner cleanup\n- Multi-file merge\n- Saved org profiles")
+    st.sidebar.markdown("## 🧪 Coming Soon")
+
+    st.sidebar.markdown(
+        "- PDF/Scanner cleanup\n- Multi-file merge\n- Saved org profiles"
+    )
 
     st.sidebar.markdown("## 🏢 Who Uses This?")
     st.sidebar.markdown(
@@ -331,6 +334,14 @@ with st.sidebar:
     st.caption("🔧 cleandataaundry@gmail.com")
     st.sidebar.markdown(
         "📋 [Fill out this quick form to request Pro access](https://forms.gle/vJ55VwzP9DudWNCG8)"
+    )
+    st.sidebar.markdown("## 📄 R Markdown Report")
+    st.sidebar.markdown(
+        "Use R? Download our R Markdown template to generate a clean HTML report from your cleaned CSV."
+    )
+
+    st.sidebar.markdown(
+        "[Download R template](https://github.com/DontrailDetroitHunter/your-repo-name/raw/main/rmd_reports/data_laundry_report.Rmd)"
     )
 
 
