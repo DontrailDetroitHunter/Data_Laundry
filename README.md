@@ -2,6 +2,7 @@
 ![R Markdown Supported](https://img.shields.io/badge/RMarkdown-Supported-75AADB?logo=rstudio&logoColor=white)
 
 
+
 **Data_Laundry** is an AI-assisted data hygiene and summarization app designed for nonprofits. Upload raw donor or volunteer data (in `.csv` or `.xlsx`) and instantly receive:
 
 ---
