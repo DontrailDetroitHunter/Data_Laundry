@@ -52,6 +52,9 @@ from non_profit import (
     push_to_salesforce,
     safe_clean_dataframe,
     clean_data,
+    load_and_clean_structured_sales,
+    load_and_clean_dataframe,
+    debug_invoice_file,
 )
 
 df_std = None
@@ -365,7 +368,7 @@ with st.sidebar.expander("📄 R Markdown & Sample Output"):
     st.code('data <- read_csv("cleaned_data.csv")', language="r")
     st.markdown("3. Click **Knit** for a report you can print or share.")
     st.image(
-        "assets/rmd_preview.png",
+        "https://github.com/DontrailDetroitHunter/Data_Laundry/raw/main/assets/rmd_preview.png",
         caption="Sample knit report in HTML",
         use_container_width=True,
     )
@@ -377,8 +380,9 @@ st.title("🧺 Data_Laundry: Mission to Clean")
 def run_column_mapper(df):
     import streamlit as st
 
-    if df is None or df.empty:
-        return None
+    if df is None:
+        raise ValueError("run_column_mapper received None instead of a DataFrame.")
+    return df.copy()
 
     # Remove duplicate columns
     if df.columns.duplicated().any():
@@ -453,30 +457,44 @@ def missing_value_report(df, key_fields=None):
 # --- Upload & Safeguard ---
 # --- File Upload and Column Mapping ---
 uploaded_file = st.file_uploader("Upload your CSV or Excel file", type=["csv", "xlsx"])
-df = None
+
 df_std = None
 cleaned_df = None
 is_donation = False
 is_volunteer = False
 
 if uploaded_file:
+    filename = uploaded_file.name.lower()
+
     try:
+        # 🔄 Load CSV or Excel file
         df = (
             pd.read_csv(uploaded_file)
-            if uploaded_file.name.endswith(".csv")
+            if filename.endswith(".csv")
             else pd.read_excel(uploaded_file)
         )
-    except Exception as e:
-        st.error(f"❌ Error reading file: {e}")
-    else:
+
+        # 🔁 Auto-map known donation/volunteer columns
         df_std = run_column_mapper(df)
 
-        # ✅ Auto-clean after mapping
+        if df_std is None or df_std.empty:
+            st.error(
+                "⚠️ The data could not be mapped correctly. Please verify the structure of your file."
+            )
+            st.stop()
+
+        # 🧼 Clean mapped data
         cleaned_df = clean_data(df_std)
+
+        if cleaned_df is None or cleaned_df.empty:
+            st.error(
+                "⚠️ Cleaning failed. Please make sure your file has usable columns."
+            )
+            st.stop()
+
         st.success("✅ File uploaded and auto-cleaned.")
         st.dataframe(cleaned_df.head())
 
-        # ✅ Use the cleaned output throughout the app
         filtered = cleaned_df
 
         # --- Detect Workflow Type ---
@@ -484,31 +502,30 @@ if uploaded_file:
             detect_workflow(df_std)
         )
 
-        # 🧪 Optional Debug Output
         st.write("🧠 Matched donation fields:", donation_matches)
         st.write("🧠 Matched volunteer fields:", volunteer_matches)
         st.write("🔍 is_donation:", is_donation, " | is_volunteer:", is_volunteer)
 
-        # --- Donation Detection (Refined) ---
+        # 🧠 Optional validation refinement
         donation_required = {"amount", "date"}
-        donation_optional = {"campaign", "donor_name", "method"}
+        volunteer_required = {"name", "hours", "department"}
+
         donation_matches = donation_required.intersection(df_std.columns)
         is_donation = len(donation_matches) == len(donation_required)
 
-        # --- Volunteer Detection (Refined) ---
-        volunteer_required = {"name", "hours", "department"}
-        volunteer_optional = {"contact", "phone", "email"}
         volunteer_matches = volunteer_required.intersection(df_std.columns)
         is_volunteer = len(volunteer_matches) == len(volunteer_required)
 
-        # 🧪 Debug display (optional — remove in production)
-        st.write("🧠 Matched donation fields:", donation_matches)
-        st.write("🧠 Matched volunteer fields:", volunteer_matches)
-        st.write("🔍 is_donation:", is_donation, " | is_volunteer:", is_volunteer)
+        st.write("🧠 Refined donation fields:", donation_matches)
+        st.write("🧠 Refined volunteer fields:", volunteer_matches)
+        st.write("🔍 Final is_donation:", is_donation, " | is_volunteer:", is_volunteer)
+
+    except Exception as e:
+        st.error(f"❌ Unexpected error during upload or processing: {e}")
+        st.stop()
 
 else:
     st.info("📂 Please upload a file to begin.")
-
 
 # --- Donation View ---
 if is_donation:

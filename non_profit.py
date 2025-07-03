@@ -238,42 +238,200 @@ def guess_columns(df):
     return mapping
 
 
+def load_and_clean_structured_sales(uploaded_file):
+    if uploaded_file is None:
+        return None
+
+    try:
+        # Read Excel file with no headers
+        full_df = pd.read_excel(uploaded_file, header=None)
+
+        # Find the row where the clean data starts
+        # Look for the row that contains the actual headers
+        header_row_index = (
+            full_df[0].astype(str).str.contains("Ship Mode", case=False).idxmax()
+        )
+
+        # Extract headers and data
+        headers = full_df.iloc[header_row_index].tolist()
+        df = full_df.iloc[header_row_index + 1 :].copy()
+        df.columns = [str(col).strip().lower().replace(" ", "_") for col in headers]
+
+        # Drop any unnamed or empty columns
+        df = df.loc[:, ~df.columns.str.contains("^unnamed", case=False)]
+        df = df.dropna(how="all")  # Drop empty rows
+
+        return safe_clean_dataframe(df)
+
+    except Exception as e:
+        st.error(f"Failed to load structured sales data: {e}")
+        return None
+
+
+def load_and_clean_dataframe(uploaded_file):
+    import pandas as pd
+    import streamlit as st
+
+    if uploaded_file is None:
+        return None
+
+    try:
+        # Try loading as comma CSV
+        df = pd.read_csv(uploaded_file, encoding="utf-8")
+        if df.shape[1] == 1:
+            sample = df.iloc[:, 0].dropna().astype(str)
+            if sample.str.contains(r"\|").sum() >= 3:
+                uploaded_file.seek(0)
+                fallback_df = pd.read_csv(
+                    uploaded_file,
+                    sep="|",
+                    engine="python",
+                    header=None,
+                    encoding="utf-8",
+                )
+
+                # ⛏️ Grab first row as headers
+                new_header = fallback_df.iloc[0].tolist()
+                df = fallback_df.iloc[1:].copy()
+                df.columns = [
+                    str(col).strip().lower().replace(" ", "_") for col in new_header
+                ]
+
+    except Exception:
+        try:
+            uploaded_file.seek(0)
+            df = pd.read_excel(uploaded_file, engine="openpyxl")
+        except Exception as e:
+            st.error(f"⚠️ Failed to load file: {e}")
+            return None
+
+    if df is None or df.empty:
+        st.warning("⚠️ File was loaded but contains no usable rows.")
+        return None
+
+    st.write("🔍 Columns after load:", df.columns.tolist())
+    st.dataframe(df.head(3))
+
+    try:
+        df_clean = safe_clean_dataframe(df)
+        if df_clean is None or df_clean.empty:
+            st.warning("⚠️ Cleaning completed, but no usable data remained.")
+            return None
+        return df_clean
+    except Exception as e:
+        st.error(f"❌ Cleaning error: {e}")
+        return None
+
+
 def safe_clean_dataframe(df):
+    import pandas as pd
+    import streamlit as st
+
     if df is None:
         raise ValueError("No data to clean.")
+
     df_clean = df.copy()
 
-    # Normalize column names
+    # ✅ Normalize column names
     df_clean.columns = [
         col.strip().lower().replace(" ", "_") for col in df_clean.columns
     ]
 
-    # Attempt donation-type cleaning
-    if "amount" in df_clean.columns:
+    # 🧹 Drop fully empty columns
+    df_clean.dropna(axis=1, how="all", inplace=True)
+
+    # 🧾 Clean 'amount' values
+
+    if "amount" in df_clean.columns and "category" in df_clean.columns:
+        contains_pipe = df_clean["amount"].astype(str).str.contains(r"\|").any()
+
+        if contains_pipe:
+            df_clean = df_clean.assign(
+                amount=df_clean["amount"].astype(str).str.split("|"),
+                category=df_clean["category"].astype(str).str.split("|"),
+            ).explode(["amount", "category"])
+
+        # 🧼 Now clean up the amount column
+        df_clean["amount"] = (
+            df_clean["amount"]
+            .astype(str)
+            .str.extract(r"([0-9]+(?:\.[0-9]+)?)")[0]
+            .replace("", None)
+        )
         df_clean["amount"] = pd.to_numeric(df_clean["amount"], errors="coerce")
 
+    # 📆 Clean 'date' if present
     if "date" in df_clean.columns:
         df_clean["date"] = pd.to_datetime(df_clean["date"], errors="coerce")
 
-    # Attempt volunteer-type cleaning
+    # ⏱️ Clean 'hours' if present
     if "hours" in df_clean.columns:
         df_clean["hours"] = pd.to_numeric(df_clean["hours"], errors="coerce")
 
-    # Attempt campaign alias mapping
+    # 🪪 Map 'dept' to 'campaign' if needed
     if "dept" in df_clean.columns and "campaign" not in df_clean.columns:
         df_clean["campaign"] = df_clean["dept"]
 
-    # Fill missing campaign labels to avoid chart errors
+    # 🧼 Standardize 'campaign' values
     if "campaign" in df_clean.columns:
         df_clean["campaign"] = (
             df_clean["campaign"]
             .astype(str)
             .str.strip()
             .str.title()
+            .replace("", "Uncategorized")
             .fillna("Uncategorized")
         )
-
+    df_clean.insert(0, "row", range(1, len(df_clean) + 1))
+    df_clean.reset_index(drop=True, inplace=True)
     return df_clean
+
+
+# def flatten_invoice_dataset(uploaded_file):
+#     import pandas as pd
+#     import streamlit as st
+
+#     try:
+#         df_raw = pd.read_excel(uploaded_file, header=None, usecols=[0])
+#         records = []
+
+#         for i in range(2, len(df_raw), 3):  # Skip "Dirty 8" and "Order ID"
+#             try:
+#                 order_id = str(df_raw.iloc[i, 0]).strip()
+#                 raw_categories = str(df_raw.iloc[i + 1, 0])
+#                 raw_amounts = str(df_raw.iloc[i + 2, 0])
+
+#                 if not order_id or not raw_categories or not raw_amounts:
+#                     continue
+
+#                 categories = [c.strip() for c in raw_categories.split("|")]
+#                 amounts = [a.strip() for a in raw_amounts.split("|")]
+
+#                 for cat, amt in zip(categories, amounts):
+#                     try:
+#                         amt_float = float(amt.replace(",", ""))
+#                     except ValueError:
+#                         amt_float = None
+
+#                     records.append(
+#                         {"order_id": order_id, "category": cat, "amount": amt_float}
+#                     )
+
+#             except Exception as e:
+#                 st.warning(f"⚠️ Skipped block at row {i}: {e}")
+#                 continue
+
+#         return pd.DataFrame(records)
+
+#     except Exception as e:
+#         st.error(f"❌ Failed to flatten invoice file: {e}")
+#         return None
+
+
+def debug_invoice_file(uploaded_file):
+    df = pd.read_excel(uploaded_file, header=None)
+    st.write("🧾 Raw Excel Preview (first 15 rows):")
+    st.dataframe(df.head(15))
 
 
 # --- Salesforce Push (Beta Stub) ---
