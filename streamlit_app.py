@@ -109,6 +109,18 @@ if enable_crm:
 
     if salesforce_token:
         st.session_state["sf_token"] = salesforce_token
+    # --- R Markdown Support ---
+    st.sidebar.markdown("## 📄 R Markdown Report")
+    st.sidebar.markdown(
+        "If you use **RStudio**, you can generate a clean, styled HTML report from your cleaned CSV."
+    )
+    st.sidebar.markdown(
+        "[📄 Download R Template](https://github.com/DontrailDetroitHunter/Data_Laundry/raw/main/rmd_reports/data_laundry_report.Rmd)"
+    )
+    st.sidebar.markdown("Open it in RStudio, change the file path, and click **Knit**.")
+    st.sidebar.markdown(
+        "No R experience needed—perfect for grant writers and CRM assistants."
+    )
 
 # --- Upgrade Call-to-Action (shown only if not Pro) ---
 if not is_pro_user:
@@ -340,8 +352,16 @@ with st.sidebar:
         "Use R? Download our R Markdown template to generate a clean HTML report from your cleaned CSV."
     )
 
-    st.sidebar.markdown(
-        "[Download R template](https://github.com/DontrailDetroitHunter/your-repo-name/raw/main/rmd_reports/data_laundry_report.Rmd)"
+with st.sidebar.expander("📄 R Markdown Report (Optional)"):
+    st.markdown(
+        "Use **RStudio**? Download our `.Rmd` template to turn your cleaned CSV into a styled HTML report."
+    )
+    st.markdown(
+        "[📄 Download Template](https://github.com/DontrailDetroitHunter/Data_Laundry/raw/main/rmd_reports/data_laundry_report.Rmd)"
+    )
+    st.markdown("Steps: 1) Open in RStudio  2) Change the file path  3) Click **Knit**")
+    st.markdown(
+        "Great for grant writers, CRM assistants, or analysts already working in R."
     )
 
 
